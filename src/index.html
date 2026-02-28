@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SecureLock</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app">
+    <header class="header">
+      <div class="logo">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+          <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+        </svg>
+        <h1>SecureLock</h1>
+      </div>
+      <div class="header-actions">
+        <button id="btn-settings" class="btn btn-icon" title="Master password settings">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+          </svg>
+        </button>
+        <button id="btn-add" class="btn btn-primary" title="Add folder">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+          Add Folder
+        </button>
+      </div>
+    </header>
+    <div id="setup-banner" class="setup-banner hidden">
+      <div class="setup-banner-content">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+        </svg>
+        <span>Set up a <strong>master password</strong> to enable folder recovery if you forget a password.</span>
+      </div>
+      <div class="setup-banner-actions">
+        <button id="btn-setup-master" class="btn btn-primary btn-sm">Set Up</button>
+        <button id="btn-dismiss-banner" class="btn btn-secondary btn-sm">Later</button>
+      </div>
+    </div>
+    <div id="empty-state" class="empty-state">
+      <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.3">
+        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+      </svg>
+      <p>No folders added yet</p>
+      <p class="hint">Click "Add Folder" to protect your first folder</p>
+    </div>
+    <div id="folder-list" class="folder-list"></div>
+    <div id="modal-overlay" class="modal-overlay hidden">
+      <div class="modal">
+        <h2 id="modal-title">Enter Password</h2>
+        <p id="modal-desc" class="modal-desc"></p>
+        <div class="password-input-wrap">
+          <input type="password" id="modal-password" placeholder="Enter password" autocomplete="off" />
+          <button id="btn-toggle-pw" class="btn-icon" title="Show/hide password">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+              <circle cx="12" cy="12" r="3"/>
+            </svg>
+          </button>
+        </div>
+        <div id="strength-wrap" class="strength-wrap hidden">
+          <div class="strength-bar"><div id="strength-fill" class="strength-fill"></div></div>
+          <span id="strength-label" class="strength-label"></span>
+        </div>
+        <input type="password" id="modal-confirm" class="hidden" placeholder="Confirm password" autocomplete="off" />
+        <div id="modal-error" class="modal-error hidden"></div>
+        <div id="forgot-password" class="forgot-link hidden">
+          <a href="#" id="btn-forgot">Forgot password?</a>
+        </div>
+        <div class="modal-actions">
+          <button id="btn-cancel" class="btn btn-secondary">Cancel</button>
+          <button id="btn-confirm" class="btn btn-primary">Confirm</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>
