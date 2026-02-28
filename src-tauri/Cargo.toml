@@ -1,0 +1,23 @@
+[package]
+name = "securelock"
+version = "1.0.0"
+edition = "2021"
+description = "A folder locker app with AES-256-GCM encryption"
+
+[build-dependencies]
+tauri-build = { version = "1", features = [] }
+
+[dependencies]
+tauri = { version = "1", features = ["shell-open", "system-tray", "dialog-open"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+aes-gcm = "0.10"
+argon2 = "0.5"
+rand = "0.8"
+walkdir = "2"
+base64 = "0.22"
+zeroize = { version = "1", features = ["derive"] }
+tauri-plugin-single-instance = { git = "https://github.com/tauri-apps/plugins-workspace", branch = "v1" }
+
+[features]
+custom-protocol = ["tauri/custom-protocol"]

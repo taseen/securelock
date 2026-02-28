@@ -1,0 +1,26 @@
+# Node
+node_modules/
+dist/
+npm-debug.log*
+
+# Rust / Cargo
+src-tauri/target/
+**/*.rs.bk
+
+# Tauri
+src-tauri/WixTools/
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment
+.env
+.env.*
