@@ -12,6 +12,10 @@ const modalTitle = document.getElementById("modal-title");
 const modalDesc = document.getElementById("modal-desc");
 const modalPassword = document.getElementById("modal-password");
 const modalConfirm = document.getElementById("modal-confirm");
+const modalHint = document.getElementById("modal-hint");
+const masterOptionWrap = document.getElementById("master-option-wrap");
+const modalUseMaster = document.getElementById("modal-use-master");
+const vaultHintDisplay = document.getElementById("vault-hint-display");
 const modalError = document.getElementById("modal-error");
 const btnCancel = document.getElementById("btn-cancel");
 const btnConfirm = document.getElementById("btn-confirm");
@@ -88,6 +92,11 @@ function renderFolders(folders) {
       const isLegacy = f.is_locked && !isVaultFormat;
       const name = isVaultFormat ? rawName.slice(0, -6) : rawName;
 
+      // File count: new-format locked vaults store count in encrypted payload
+      const countDisplay = (f.is_locked && isVaultFormat)
+        ? "? files"
+        : `${f.file_count} file${f.file_count !== 1 ? "s" : ""}`;
+
       const lockIcon = f.is_locked
         ? `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
@@ -122,7 +131,7 @@ function renderFolders(folders) {
               <span class="status-badge ${f.is_locked ? "locked" : "unlocked"}">${f.is_locked ? "Locked" : "Unlocked"}</span>
               ${recoveryBadge}
               ${legacyBadge}
-              <span>${f.file_count} file${f.file_count !== 1 ? "s" : ""}</span>
+              <span>${countDisplay}</span>
             </div>
           </div>
           <div class="folder-actions">
@@ -168,9 +177,13 @@ function showModal(title, desc, action, showConfirmField) {
   modalDesc.textContent = desc;
   modalPassword.value = "";
   modalConfirm.value = "";
+  modalHint.value = "";
+  modalUseMaster.checked = false;
   modalError.classList.add("hidden");
   modalError.textContent = "";
   forgotPassword.classList.add("hidden");
+  vaultHintDisplay.classList.add("hidden");
+  vaultHintDisplay.textContent = "";
   currentAction = action;
 
   if (showConfirmField) {
@@ -182,6 +195,20 @@ function showModal(title, desc, action, showConfirmField) {
     strengthWrap.classList.add("hidden");
   }
 
+  // Show hint input and master checkbox only for lock actions
+  const isLockAction = action.type === "lock" || action.type === "lock_all";
+  if (isLockAction) {
+    modalHint.classList.remove("hidden");
+    if (masterSessionUnlocked) {
+      masterOptionWrap.classList.remove("hidden");
+    } else {
+      masterOptionWrap.classList.add("hidden");
+    }
+  } else {
+    modalHint.classList.add("hidden");
+    masterOptionWrap.classList.add("hidden");
+  }
+
   modalOverlay.classList.remove("hidden");
   setTimeout(() => modalPassword.focus(), 50);
 }
@@ -191,7 +218,12 @@ function hideModal() {
   currentAction = null;
   modalPassword.value = "";
   modalConfirm.value = "";
+  modalHint.value = "";
+  modalHint.classList.add("hidden");
+  modalUseMaster.checked = false;
+  masterOptionWrap.classList.add("hidden");
   forgotPassword.classList.add("hidden");
+  vaultHintDisplay.classList.add("hidden");
 }
 
 // ── Lock / Unlock prompts ──
@@ -211,14 +243,22 @@ window.promptUnlock = async function (path) {
     { type: "unlock", path },
     false
   );
-  // Check if recovery is available
+
+  // Load hint and recovery availability in parallel
   try {
-    const hasRecovery = await invoke("check_recovery_key", { path });
+    const [hint, hasRecovery] = await Promise.all([
+      invoke("get_vault_hint", { path }).catch(() => null),
+      invoke("check_recovery_key", { path }).catch(() => false),
+    ]);
+    if (hint) {
+      vaultHintDisplay.textContent = "Hint: " + hint;
+      vaultHintDisplay.classList.remove("hidden");
+    }
     if (hasRecovery && masterPasswordConfigured) {
       forgotPassword.classList.remove("hidden");
     }
   } catch (e) {
-    // Ignore — just don't show the link
+    // Ignore — UI degrades gracefully
   }
 };
 
@@ -336,11 +376,15 @@ btnConfirm.addEventListener("click", async () => {
 
   try {
     if (currentAction.type === "lock") {
-      await invoke("lock_folder", { path: currentAction.path, password });
+      const hint = modalHint.value.trim() || null;
+      const useMaster = masterSessionUnlocked && modalUseMaster.checked;
+      await invoke("lock_folder", { path: currentAction.path, password, hint, useMaster });
     } else if (currentAction.type === "unlock") {
       await invoke("unlock_folder", { path: currentAction.path, password });
     } else if (currentAction.type === "lock_all") {
-      await invoke("lock_all", { password });
+      const hint = modalHint.value.trim() || null;
+      const useMaster = masterSessionUnlocked && modalUseMaster.checked;
+      await invoke("lock_all", { password, hint, useMaster });
     } else if (currentAction.type === "setup_master") {
       await invoke("setup_master_password", { password });
       masterPasswordConfigured = true;
@@ -384,6 +428,16 @@ modalPassword.addEventListener("keydown", (e) => {
 });
 
 modalConfirm.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    if (!modalHint.classList.contains("hidden")) {
+      modalHint.focus();
+    } else {
+      btnConfirm.click();
+    }
+  }
+});
+
+modalHint.addEventListener("keydown", (e) => {
   if (e.key === "Enter") btnConfirm.click();
 });
 

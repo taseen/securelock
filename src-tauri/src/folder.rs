@@ -11,16 +11,25 @@ const VAULT_EXT: &str = ".vault";
 // Legacy constants (kept for backward compat detection)
 const META_FILE: &str = ".securelock";
 
+/// Vault header — stored unencrypted at the start of the file.
+/// Only v, salt, hint (optional), and recovery_key (optional, itself encrypted) live here.
+/// Folder metadata (name, count, size) is inside the encrypted payload.
 #[derive(Serialize, Deserialize)]
 struct VaultHeader {
-    version: u32,
+    v: u32,
     salt: Vec<u8>,
-    verify_token: Vec<u8>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    hint: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     recovery_key: Option<Vec<u8>>,
-    original_name: String,
-    file_count: usize,
-    total_size: u64,
+}
+
+/// Metadata prepended to the encrypted payload.
+#[derive(Serialize, Deserialize)]
+struct PayloadMeta {
+    name: String,
+    count: usize,
+    size: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -29,6 +38,8 @@ pub struct ProtectedFolder {
     pub is_locked: bool,
     pub file_count: usize,
     pub has_recovery: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hint: Option<String>,
 }
 
 // ── Vault I/O helpers ────────────────────────────────────────────────────────
@@ -114,13 +125,28 @@ fn read_vault_full(
     Ok((header, nonce, ciphertext))
 }
 
-/// Reconstruct all files from a decrypted payload into `output_folder`.
+/// Extract PayloadMeta and the file-entry offset from a decrypted payload.
+fn parse_payload_meta(plaintext: &[u8]) -> Result<(PayloadMeta, usize), String> {
+    if plaintext.len() < 4 {
+        return Err("Corrupted vault payload: too short".into());
+    }
+    let meta_len = u32::from_le_bytes(plaintext[..4].try_into().unwrap()) as usize;
+    let meta_end = 4 + meta_len;
+    if plaintext.len() < meta_end {
+        return Err("Corrupted vault payload: metadata truncated".into());
+    }
+    let meta: PayloadMeta = serde_json::from_slice(&plaintext[4..meta_end])
+        .map_err(|_| "Corrupted vault payload: invalid metadata".to_string())?;
+    Ok((meta, meta_end))
+}
+
+/// Reconstruct all files from the file-entries section of a decrypted payload.
 fn reconstruct_files(
     output_folder: &Path,
-    plaintext: &[u8],
+    entries: &[u8],
     file_count: usize,
 ) -> Result<(), String> {
-    let mut cursor = Cursor::new(plaintext);
+    let mut cursor = Cursor::new(entries);
 
     for _ in 0..file_count {
         let mut path_len_buf = [0u8; 4];
@@ -176,6 +202,7 @@ fn reconstruct_files(
 pub fn lock_folder(
     folder_path: &str,
     password: &str,
+    hint: Option<String>,
     master_key: Option<&[u8; 32]>,
 ) -> Result<ProtectedFolder, String> {
     let folder = Path::new(folder_path);
@@ -223,17 +250,28 @@ pub fn lock_folder(
         .unwrap_or("folder")
         .to_string();
 
-    // Derive key and create crypto material
+    // Derive key
     let salt = crypto::generate_salt();
     let mut key = crypto::derive_key(password, &salt)?;
-    let verify_token = crypto::create_verify_token(&key)?;
+
+    // Wrap folder key with master key if requested
     let recovery_key = match master_key {
         Some(mk) => Some(crypto::wrap_key(mk, &key)?),
         None => None,
     };
 
-    // Serialize payload: [path_len u32][path bytes][data_len u64][data bytes] × N
+    // Build payload: [meta_len u32][meta JSON][file entries...]
+    let meta = PayloadMeta {
+        name: original_name,
+        count: file_count,
+        size: total_size,
+    };
+    let meta_json = serde_json::to_vec(&meta)
+        .map_err(|e| format!("Metadata serialization error: {}", e))?;
+
     let mut payload: Vec<u8> = Vec::new();
+    payload.extend_from_slice(&(meta_json.len() as u32).to_le_bytes());
+    payload.extend_from_slice(&meta_json);
     for (rel_path, data) in &file_entries {
         let path_bytes = rel_path.as_bytes();
         payload.extend_from_slice(&(path_bytes.len() as u32).to_le_bytes());
@@ -244,14 +282,12 @@ pub fn lock_folder(
     drop(file_entries); // free memory before encryption
 
     let has_recovery = recovery_key.is_some();
+    let returned_hint = hint.clone();
     let header = VaultHeader {
-        version: 1,
+        v: 2,
         salt: salt.to_vec(),
-        verify_token,
+        hint,
         recovery_key,
-        original_name,
-        file_count,
-        total_size,
     };
     let header_json = serde_json::to_vec(&header)
         .map_err(|e| format!("Header serialization error: {}", e))?;
@@ -296,6 +332,7 @@ pub fn lock_folder(
         is_locked: true,
         file_count,
         has_recovery,
+        hint: returned_hint,
     })
 }
 
@@ -322,18 +359,19 @@ pub fn unlock_folder(vault_path: &str, password: &str) -> Result<ProtectedFolder
         e
     })?;
 
-    if !crypto::verify_password(&key, &header.verify_token) {
+    // AES-GCM authentication tag handles wrong password — no known-plaintext oracle needed
+    let plaintext = crypto::decrypt_with_nonce(&key, &nonce, &ciphertext).map_err(|_| {
         crypto::zeroize_key(&mut key);
         let _ = set_readonly(vault);
-        return Err("Incorrect password".into());
-    }
+        "Incorrect password".to_string()
+    })?;
+    crypto::zeroize_key(&mut key);
 
-    let plaintext = crypto::decrypt_with_nonce(&key, &nonce, &ciphertext).map_err(|e| {
-        crypto::zeroize_key(&mut key);
+    // Read metadata from the front of the plaintext payload
+    let (meta, file_entries_offset) = parse_payload_meta(&plaintext).map_err(|e| {
         let _ = set_readonly(vault);
         e
     })?;
-    crypto::zeroize_key(&mut key);
 
     let output_str = vault_path
         .strip_suffix(VAULT_EXT)
@@ -348,7 +386,6 @@ pub fn unlock_folder(vault_path: &str, password: &str) -> Result<ProtectedFolder
         ));
     }
 
-    let file_count = header.file_count;
     let parent = vault.parent().unwrap_or(Path::new("."));
 
     // Reconstruct into a temp dir first — if anything fails, vault stays intact
@@ -357,8 +394,7 @@ pub fn unlock_folder(vault_path: &str, password: &str) -> Result<ProtectedFolder
         .tempdir_in(parent)
         .map_err(|e| format!("Failed to create temp directory: {}", e))?;
 
-    reconstruct_files(tmp_dir.path(), &plaintext, file_count).map_err(|e| {
-        // tmp_dir auto-cleans on drop
+    reconstruct_files(tmp_dir.path(), &plaintext[file_entries_offset..], meta.count).map_err(|e| {
         let _ = set_readonly(vault);
         e
     })?;
@@ -373,8 +409,9 @@ pub fn unlock_folder(vault_path: &str, password: &str) -> Result<ProtectedFolder
     Ok(ProtectedFolder {
         path: output_str.to_string(),
         is_locked: false,
-        file_count,
+        file_count: meta.count,
         has_recovery: false,
+        hint: None,
     })
 }
 
@@ -404,19 +441,19 @@ pub fn unlock_folder_with_master_key(
         e
     })?;
 
-    if !crypto::verify_password(&folder_key, &header.verify_token) {
-        crypto::zeroize_key(&mut folder_key);
-        let _ = set_readonly(vault);
-        return Err("Master password verification failed".into());
-    }
-
+    // AES-GCM authentication handles wrong key — no verify_password call needed
     let plaintext =
-        crypto::decrypt_with_nonce(&folder_key, &nonce, &ciphertext).map_err(|e| {
+        crypto::decrypt_with_nonce(&folder_key, &nonce, &ciphertext).map_err(|_| {
             crypto::zeroize_key(&mut folder_key);
             let _ = set_readonly(vault);
-            e
+            "Master key recovery failed — vault may be corrupted".to_string()
         })?;
     crypto::zeroize_key(&mut folder_key);
+
+    let (meta, file_entries_offset) = parse_payload_meta(&plaintext).map_err(|e| {
+        let _ = set_readonly(vault);
+        e
+    })?;
 
     let output_str = vault_path
         .strip_suffix(VAULT_EXT)
@@ -431,7 +468,6 @@ pub fn unlock_folder_with_master_key(
         ));
     }
 
-    let file_count = header.file_count;
     let parent = vault.parent().unwrap_or(Path::new("."));
 
     let tmp_dir = tempfile::Builder::new()
@@ -439,7 +475,7 @@ pub fn unlock_folder_with_master_key(
         .tempdir_in(parent)
         .map_err(|e| format!("Failed to create temp directory: {}", e))?;
 
-    reconstruct_files(tmp_dir.path(), &plaintext, file_count).map_err(|e| {
+    reconstruct_files(tmp_dir.path(), &plaintext[file_entries_offset..], meta.count).map_err(|e| {
         let _ = set_readonly(vault);
         e
     })?;
@@ -453,8 +489,9 @@ pub fn unlock_folder_with_master_key(
     Ok(ProtectedFolder {
         path: output_str.to_string(),
         is_locked: false,
-        file_count,
+        file_count: meta.count,
         has_recovery: false,
+        hint: None,
     })
 }
 
@@ -489,11 +526,29 @@ pub fn has_recovery_key(path: &str) -> bool {
     false
 }
 
-pub fn get_file_count(path: &str) -> usize {
+/// Returns the hint from the vault header, or None if not present or not a vault.
+pub fn get_vault_hint(path: &str) -> Option<String> {
     if path.ends_with(VAULT_EXT) {
         if let Ok(header) = read_vault_header_only(Path::new(path)) {
-            return header.file_count;
+            return header.hint;
         }
+    }
+    None
+}
+
+/// Returns the hint from the vault header for display in the folder list.
+pub fn get_hint_for_folder(path: &str) -> Option<String> {
+    if is_locked(path) && path.ends_with(VAULT_EXT) {
+        return get_vault_hint(path);
+    }
+    None
+}
+
+/// File count for locked vaults is 0 (encrypted in payload — cannot read without password).
+/// For legacy and unlocked folders the real count is returned.
+pub fn get_file_count(path: &str) -> usize {
+    if path.ends_with(VAULT_EXT) {
+        // Count is inside the encrypted payload — not available without password
         return 0;
     }
     if is_legacy_locked(path) {
@@ -601,6 +656,7 @@ mod legacy {
             is_locked: false,
             file_count,
             has_recovery: false,
+            hint: None,
         })
     }
 
@@ -626,6 +682,7 @@ mod legacy {
             is_locked: false,
             file_count,
             has_recovery: false,
+            hint: None,
         })
     }
 

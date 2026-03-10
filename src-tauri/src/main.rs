@@ -86,6 +86,7 @@ fn main() {
             commands::is_master_unlocked,
             commands::check_recovery_key,
             commands::recover_folder,
+            commands::get_vault_hint,
         ])
         .run(tauri::generate_context!())
         .expect("Error running SecureLock");

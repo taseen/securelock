@@ -6,7 +6,8 @@ A lightweight desktop app for encrypting and locking folders with AES-256-GCM en
 
 - **Vault encryption** — Lock any folder into a single encrypted `.vault` file using AES-256-GCM with Argon2id key derivation. All contents are packed into one portable container.
 - **Import .vault files** — Open an existing `.vault` file directly from the UI without re-adding it.
-- **Master password recovery** — Optionally set a master password that can recover any folder locked while it was active. If you forget a folder's password, the master password can decrypt it.
+- **Master password recovery** — Optionally set a master password. When locking a folder, enable recovery with a checkbox — the folder key is then wrapped with the master key and stored in the vault. If you forget a folder's password, the master password can decrypt it.
+- **Password hint** — Optionally attach a plaintext hint when locking. The hint is shown above the password field when unlocking so you can remind yourself without compromising security.
 - **System tray** — Minimizes to tray. Lock all folders at once from the tray menu.
 - **Password strength meter** — Visual feedback when choosing passwords.
 - **Single instance** — Only one instance of the app can run at a time. Launching again focuses the existing window.
@@ -14,9 +15,9 @@ A lightweight desktop app for encrypting and locking folders with AES-256-GCM en
 
 ## How It Works
 
-1. **Locking:** Derives an AES-256 key from your password using Argon2id. All folder contents are packed into a single `.vault` file and encrypted with AES-256-GCM. The original folder is removed.
-2. **Unlocking:** Re-derives the key from your password, verifies it against a stored token in the vault header, decrypts the payload, and reconstructs the original folder.
-3. **Master password (optional):** When configured, the folder's AES key is wrapped with the master key and stored in the vault header. Recovery unwraps the folder key using the master password without needing the original folder password.
+1. **Locking:** Derives an AES-256 key from your password using Argon2id. All folder contents — plus encrypted metadata (name, file count, size) — are packed into a single `.vault` file and encrypted with AES-256-GCM. The original folder is removed. Only the salt, an optional hint, and an optional recovery key live in the unencrypted header.
+2. **Unlocking:** Re-derives the key from your password and decrypts the payload. A wrong password is detected by the AES-GCM authentication tag failing — there is no known-plaintext token in the header. The original folder is reconstructed atomically via a temp directory.
+3. **Master password (optional, per-lock):** When enabled for a specific lock operation, the folder's AES key is wrapped with the master key and stored in the vault header. Recovery unwraps the folder key using the master password without needing the original folder password.
 
 ## Prerequisites
 
@@ -66,11 +67,14 @@ securelock/
 
 ## Security
 
-- **AES-256-GCM** for authenticated encryption
+- **AES-256-GCM** for authenticated encryption — the auth tag detects wrong passwords and tampering with no separate verify token
 - **Argon2id** for password-based key derivation (64 MB memory, 3 iterations)
 - Random 32-byte salts and 12-byte nonces per encryption operation
+- **No plaintext metadata leakage** — folder name, file count, and size are inside the ciphertext
+- **No known-plaintext oracle** — there is no verify token in the vault header; brute-force must attack the full AES-GCM ciphertext
 - Master key is only held in memory for the current session — never written to disk
 - Keys are zeroized from memory when no longer needed
+- Recovery key is opt-in per lock — vaults without it cannot be recovered via master password
 
 ## License
 

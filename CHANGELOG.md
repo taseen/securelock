@@ -4,6 +4,30 @@ All notable changes to SecureLock are documented here.
 
 ---
 
+## [2.1.0] - 2026-03-10
+
+### Security
+- **Removed verify token from vault header** — the token was a known-plaintext oracle enabling offline brute-force without touching the ciphertext. Wrong-password detection now relies solely on the AES-GCM authentication tag.
+- **Folder metadata encrypted** — original folder name, file count, and total size are now stored inside the encrypted payload rather than the unencrypted header.
+- **Master password recovery is now opt-in per lock** — previously the recovery key was automatically written to the vault whenever a master session was active. Now the user explicitly enables it per lock operation via a checkbox.
+
+### Added
+- **Password hint** — optional plaintext hint stored in the vault header. Set when locking; displayed above the password field in the unlock dialog. Intentionally unencrypted so it is readable before decryption.
+- **`get_vault_hint` command** — reads the vault header without a password and returns the hint string for display in the UI.
+- Lock modal now shows a hint input field and a "Protect with master password" checkbox (checkbox is only visible when a master session is active).
+- Unlock modal fetches and displays the hint if one was set.
+- File count displays `?` for locked vaults (count is inside the ciphertext and unavailable without the password).
+
+### Changed
+- Vault header format updated to version 2: fields are now `v`, `salt`, `hint` (optional), `recovery_key` (optional). All metadata previously in the header is moved into the encrypted payload.
+- `lock_folder` and `lock_all` commands accept `hint: Option<String>` and `use_master: bool` parameters.
+- `ProtectedFolder` struct includes a `hint` field returned after locking and included in folder list responses.
+
+### Fixed
+- Modal hint input and master password checkbox now correctly hidden in the unlock dialog (missing per-element `.hidden` CSS rules added).
+
+---
+
 ## [2.0.0] - 2026-03-10
 
 ### Changed
