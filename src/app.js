@@ -6,6 +6,7 @@ const { listen } = window.__TAURI__.event;
 const folderListEl = document.getElementById("folder-list");
 const emptyStateEl = document.getElementById("empty-state");
 const btnAdd = document.getElementById("btn-add");
+const btnImport = document.getElementById("btn-import");
 const modalOverlay = document.getElementById("modal-overlay");
 const modalTitle = document.getElementById("modal-title");
 const modalDesc = document.getElementById("modal-desc");
@@ -81,7 +82,12 @@ function renderFolders(folders) {
 
   folderListEl.innerHTML = folders
     .map((f) => {
-      const name = f.path.split(/[\\/]/).pop();
+      // Strip .vault extension for display; flag legacy-locked folders
+      const rawName = f.path.split(/[\\/]/).pop();
+      const isVaultFormat = f.path.endsWith(".vault");
+      const isLegacy = f.is_locked && !isVaultFormat;
+      const name = isVaultFormat ? rawName.slice(0, -6) : rawName;
+
       const lockIcon = f.is_locked
         ? `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
@@ -90,12 +96,17 @@ function renderFolders(folders) {
              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 5-5 5 5 0 0 1 5 5"/>
            </svg>`;
 
-      const recoveryBadge = f.is_locked && f.has_recovery
-        ? `<span class="recovery-badge" title="Recovery available">
-             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-               <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-             </svg>
-           </span>`
+      const recoveryBadge =
+        f.is_locked && f.has_recovery
+          ? `<span class="recovery-badge" title="Recovery available">
+               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                 <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+               </svg>
+             </span>`
+          : "";
+
+      const legacyBadge = isLegacy
+        ? `<span class="legacy-badge" title="Legacy format — will convert on next lock/unlock">Legacy</span>`
         : "";
 
       const actionBtn = f.is_locked
@@ -110,6 +121,7 @@ function renderFolders(folders) {
             <div class="folder-meta">
               <span class="status-badge ${f.is_locked ? "locked" : "unlocked"}">${f.is_locked ? "Locked" : "Unlocked"}</span>
               ${recoveryBadge}
+              ${legacyBadge}
               <span>${f.file_count} file${f.file_count !== 1 ? "s" : ""}</span>
             </div>
           </div>
@@ -126,7 +138,22 @@ function renderFolders(folders) {
 btnAdd.addEventListener("click", async () => {
   const selected = await open({ directory: true, multiple: false });
   if (!selected) return;
+  try {
+    await invoke("add_folder", { path: selected });
+    await loadFolders();
+  } catch (e) {
+    alert("Error: " + e);
+  }
+});
 
+// ── Import existing .vault file ──
+btnImport.addEventListener("click", async () => {
+  const selected = await open({
+    directory: false,
+    multiple: false,
+    filters: [{ name: "SecureLock Vault", extensions: ["vault"] }],
+  });
+  if (!selected) return;
   try {
     await invoke("add_folder", { path: selected });
     await loadFolders();
@@ -171,7 +198,7 @@ function hideModal() {
 window.promptLock = function (path) {
   showModal(
     "Lock Folder",
-    "Enter a password to encrypt all files in this folder.",
+    "Enter a password to encrypt this folder into a secure .vault container. The original folder will be removed.",
     { type: "lock", path },
     true
   );
@@ -179,12 +206,12 @@ window.promptLock = function (path) {
 
 window.promptUnlock = async function (path) {
   showModal(
-    "Unlock Folder",
-    "Enter your password to decrypt files.",
+    "Unlock Vault",
+    "Enter your password to decrypt and restore the folder.",
     { type: "unlock", path },
     false
   );
-  // Check if recovery is available for this folder
+  // Check if recovery is available
   try {
     const hasRecovery = await invoke("check_recovery_key", { path });
     if (hasRecovery && masterPasswordConfigured) {
@@ -211,13 +238,11 @@ btnForgot.addEventListener("click", (e) => {
   const path = currentAction.path;
 
   if (masterSessionUnlocked) {
-    // Already unlocked — go straight to recovery
     doRecover(path);
   } else {
-    // Need to verify master password first
     showModal(
       "Master Password",
-      "Enter your master password to recover this folder.",
+      "Enter your master password to recover this vault.",
       { type: "recover", path },
       false
     );
@@ -244,7 +269,7 @@ btnSettings.addEventListener("click", () => {
   if (!masterPasswordConfigured) {
     showModal(
       "Set Up Master Password",
-      "This password can recover any folder locked while it's active. Choose a strong, memorable password.",
+      "This password can recover any vault locked while it's active. Choose a strong, memorable password.",
       { type: "setup_master" },
       true
     );
@@ -270,7 +295,7 @@ btnSetupMaster.addEventListener("click", () => {
   setupBanner.classList.add("hidden");
   showModal(
     "Set Up Master Password",
-    "This password can recover any folder locked while it's active. Choose a strong, memorable password.",
+    "This password can recover any vault locked while it's active. Choose a strong, memorable password.",
     { type: "setup_master" },
     true
   );
@@ -291,8 +316,11 @@ btnConfirm.addEventListener("click", async () => {
     return;
   }
 
-  // Validation for actions requiring confirmation
-  if (currentAction.type === "lock" || currentAction.type === "lock_all" || currentAction.type === "setup_master") {
+  if (
+    currentAction.type === "lock" ||
+    currentAction.type === "lock_all" ||
+    currentAction.type === "setup_master"
+  ) {
     if (password.length < 4) {
       showError("Password must be at least 4 characters");
       return;
@@ -303,7 +331,6 @@ btnConfirm.addEventListener("click", async () => {
     }
   }
 
-  // Show loading state
   btnConfirm.disabled = true;
   btnConfirm.innerHTML = '<span class="spinner"></span> Working...';
 
@@ -346,7 +373,6 @@ modalOverlay.addEventListener("click", (e) => {
   if (e.target === modalOverlay) hideModal();
 });
 
-// Enter key to confirm
 modalPassword.addEventListener("keydown", (e) => {
   if (e.key === "Enter") {
     if (!modalConfirm.classList.contains("hidden")) {
@@ -361,12 +387,10 @@ modalConfirm.addEventListener("keydown", (e) => {
   if (e.key === "Enter") btnConfirm.click();
 });
 
-// Escape to close
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") hideModal();
 });
 
-// Toggle password visibility
 btnTogglePw.addEventListener("click", () => {
   const isPassword = modalPassword.type === "password";
   modalPassword.type = isPassword ? "text" : "password";
@@ -413,7 +437,7 @@ function showError(msg) {
 listen("tray-lock-all", () => {
   showModal(
     "Lock All Folders",
-    "Enter a password to lock all unlocked folders.",
+    "Enter a password to lock all unlocked folders into .vault containers.",
     { type: "lock_all" },
     true
   );

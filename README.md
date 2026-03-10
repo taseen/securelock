@@ -4,18 +4,19 @@ A lightweight desktop app for encrypting and locking folders with AES-256-GCM en
 
 ## Features
 
-- **Folder encryption** — Lock any folder with a password. All files are encrypted in-place using AES-256-GCM with Argon2id key derivation.
+- **Vault encryption** — Lock any folder into a single encrypted `.vault` file using AES-256-GCM with Argon2id key derivation. All contents are packed into one portable container.
+- **Import .vault files** — Open an existing `.vault` file directly from the UI without re-adding it.
 - **Master password recovery** — Optionally set a master password that can recover any folder locked while it was active. If you forget a folder's password, the master password can decrypt it.
 - **System tray** — Minimizes to tray. Lock all folders at once from the tray menu.
 - **Password strength meter** — Visual feedback when choosing passwords.
 - **Single instance** — Only one instance of the app can run at a time. Launching again focuses the existing window.
-- **Portable metadata** — Each locked folder stores a `.securelock` file with everything needed to decrypt (salt, verify token, file manifest). No external database.
+- **Legacy support** — Folders locked with v1.x (`.securelock` format) are still unlockable.
 
 ## How It Works
 
-1. **Locking:** Derives an AES-256 key from your password using Argon2id. Each file is encrypted with AES-256-GCM and renamed to `.locked`. A `.securelock` metadata file is written to the folder.
-2. **Unlocking:** Re-derives the key from your password, verifies it against a stored token, and decrypts all files back to their originals.
-3. **Master password (optional):** When configured, the folder's AES key is wrapped (encrypted) with the master key and stored in `.securelock`. Recovery unwraps the folder key using the master password without needing the original folder password.
+1. **Locking:** Derives an AES-256 key from your password using Argon2id. All folder contents are packed into a single `.vault` file and encrypted with AES-256-GCM. The original folder is removed.
+2. **Unlocking:** Re-derives the key from your password, verifies it against a stored token in the vault header, decrypts the payload, and reconstructs the original folder.
+3. **Master password (optional):** When configured, the folder's AES key is wrapped with the master key and stored in the vault header. Recovery unwraps the folder key using the master password without needing the original folder password.
 
 ## Prerequisites
 
