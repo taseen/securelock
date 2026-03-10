@@ -2,6 +2,7 @@ use crate::crypto;
 use crate::folder::{self, ProtectedFolder};
 use serde::{Deserialize, Serialize};
 use std::fs;
+use std::path::Path;
 use std::sync::Mutex;
 use tauri::State;
 
@@ -34,6 +35,7 @@ impl AppState {
             } else {
                 (Vec::new(), None, None)
             };
+
         AppState {
             folders: Mutex::new(folders),
             master_salt: Mutex::new(master_salt),
@@ -61,26 +63,58 @@ impl AppState {
 #[tauri::command]
 pub fn get_folders(state: State<'_, AppState>) -> Vec<ProtectedFolder> {
     let folders = state.folders.lock().unwrap();
-    folders.iter().map(|path| {
-        let is_locked = folder::is_locked(path);
-        let file_count = if is_locked { folder::get_locked_file_count(path) } else { folder::count_files(path) };
-        let has_recovery = if is_locked { folder::has_recovery_key(path) } else { false };
-        ProtectedFolder { path: path.clone(), is_locked, file_count, has_recovery }
-    }).collect()
+    folders
+        .iter()
+        .map(|path| {
+            let is_locked = folder::is_locked(path);
+            let file_count = folder::get_file_count(path);
+            let has_recovery = if is_locked {
+                folder::has_recovery_key(path)
+            } else {
+                false
+            };
+            ProtectedFolder {
+                path: path.clone(),
+                is_locked,
+                file_count,
+                has_recovery,
+            }
+        })
+        .collect()
 }
 
 #[tauri::command]
 pub fn add_folder(path: String, state: State<'_, AppState>) -> Result<ProtectedFolder, String> {
     let mut folders = state.folders.lock().unwrap();
-    if folders.contains(&path) { return Err("Folder is already in the list".into()); }
-    if !std::path::Path::new(&path).is_dir() { return Err("Path is not a valid directory".into()); }
+    if folders.contains(&path) {
+        return Err("Folder is already in the list".into());
+    }
+
+    let p = Path::new(&path);
+    let is_dir = p.is_dir();
+    let is_vault = path.ends_with(".vault") && p.is_file();
+    if !is_dir && !is_vault {
+        return Err("Path must be a folder or a .vault file".into());
+    }
+
     folders.push(path.clone());
     drop(folders);
     state.save();
+
     let is_locked = folder::is_locked(&path);
-    let file_count = if is_locked { folder::get_locked_file_count(&path) } else { folder::count_files(&path) };
-    let has_recovery = if is_locked { folder::has_recovery_key(&path) } else { false };
-    Ok(ProtectedFolder { path, is_locked, file_count, has_recovery })
+    let file_count = folder::get_file_count(&path);
+    let has_recovery = if is_locked {
+        folder::has_recovery_key(&path)
+    } else {
+        false
+    };
+
+    Ok(ProtectedFolder {
+        path,
+        is_locked,
+        file_count,
+        has_recovery,
+    })
 }
 
 #[tauri::command]
@@ -93,34 +127,90 @@ pub fn remove_folder(path: String, state: State<'_, AppState>) -> Result<(), Str
 }
 
 #[tauri::command]
-pub fn lock_folder(path: String, password: String, state: State<'_, AppState>) -> Result<ProtectedFolder, String> {
+pub fn lock_folder(
+    path: String,
+    password: String,
+    state: State<'_, AppState>,
+) -> Result<ProtectedFolder, String> {
     let master_key = state.master_key.lock().unwrap();
-    folder::lock_folder(&path, &password, master_key.as_ref())
+    let result = folder::lock_folder(&path, &password, master_key.as_ref())?;
+    drop(master_key);
+
+    // Update stored path: folder path → vault path
+    let mut folders = state.folders.lock().unwrap();
+    if let Some(pos) = folders.iter().position(|f| f == &path) {
+        folders[pos] = result.path.clone();
+    }
+    drop(folders);
+    state.save();
+
+    Ok(result)
 }
 
 #[tauri::command]
-pub fn unlock_folder(path: String, password: String) -> Result<ProtectedFolder, String> {
-    folder::unlock_folder(&path, &password)
+pub fn unlock_folder(
+    path: String,
+    password: String,
+    state: State<'_, AppState>,
+) -> Result<ProtectedFolder, String> {
+    let result = if folder::is_legacy_locked(&path) {
+        folder::unlock_folder_legacy(&path, &password)?
+    } else {
+        folder::unlock_folder(&path, &password)?
+    };
+
+    // Update stored path: vault path → folder path
+    let mut folders = state.folders.lock().unwrap();
+    if let Some(pos) = folders.iter().position(|f| f == &path) {
+        folders[pos] = result.path.clone();
+    }
+    drop(folders);
+    state.save();
+
+    Ok(result)
 }
 
 #[tauri::command]
-pub fn lock_all(password: String, state: State<'_, AppState>) -> Result<Vec<ProtectedFolder>, String> {
+pub fn lock_all(
+    password: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<ProtectedFolder>, String> {
     let master_key = state.master_key.lock().unwrap().clone();
-    let folders = state.folders.lock().unwrap();
+    let folders_snapshot = state.folders.lock().unwrap().clone();
+
     let mut results = Vec::new();
-    for path in folders.iter() {
+    let mut path_updates: Vec<(String, String)> = Vec::new();
+
+    for path in &folders_snapshot {
         if !folder::is_locked(path) {
             match folder::lock_folder(path, &password, master_key.as_ref()) {
-                Ok(pf) => results.push(pf),
+                Ok(pf) => {
+                    path_updates.push((path.clone(), pf.path.clone()));
+                    results.push(pf);
+                }
                 Err(e) => return Err(format!("Failed to lock '{}': {}", path, e)),
             }
         }
     }
+
+    // Apply all path updates at once
+    let mut folders = state.folders.lock().unwrap();
+    for (old, new) in path_updates {
+        if let Some(pos) = folders.iter().position(|f| f == &old) {
+            folders[pos] = new;
+        }
+    }
+    drop(folders);
+    state.save();
+
     Ok(results)
 }
 
 #[tauri::command]
-pub fn setup_master_password(password: String, state: State<'_, AppState>) -> Result<(), String> {
+pub fn setup_master_password(
+    password: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
     if password.len() < 4 {
         return Err("Master password must be at least 4 characters".into());
     }
@@ -135,12 +225,17 @@ pub fn setup_master_password(password: String, state: State<'_, AppState>) -> Re
 }
 
 #[tauri::command]
-pub fn verify_master_password(password: String, state: State<'_, AppState>) -> Result<(), String> {
+pub fn verify_master_password(
+    password: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
     let salt_opt = state.master_salt.lock().unwrap().clone();
     let token_opt = state.master_verify_token.lock().unwrap().clone();
     let salt_vec = salt_opt.ok_or("No master password configured")?;
     let token = token_opt.ok_or("No master password configured")?;
-    let salt: [u8; 32] = salt_vec.try_into().map_err(|_| "Invalid master salt")?;
+    let salt: [u8; 32] = salt_vec
+        .try_into()
+        .map_err(|_| "Invalid master salt".to_string())?;
     let key = crypto::derive_key(&password, &salt)?;
     if !crypto::verify_password(&key, &token) {
         return Err("Incorrect master password".into());
@@ -165,8 +260,29 @@ pub fn check_recovery_key(path: String) -> bool {
 }
 
 #[tauri::command]
-pub fn recover_folder(path: String, state: State<'_, AppState>) -> Result<ProtectedFolder, String> {
+pub fn recover_folder(
+    path: String,
+    state: State<'_, AppState>,
+) -> Result<ProtectedFolder, String> {
     let master_key = state.master_key.lock().unwrap();
-    let key = master_key.as_ref().ok_or("Master password not unlocked for this session")?;
-    folder::unlock_folder_with_master_key(&path, key)
+    let key = master_key
+        .as_ref()
+        .ok_or("Master password not unlocked for this session")?;
+
+    let result = if folder::is_legacy_locked(&path) {
+        folder::unlock_folder_legacy_with_master_key(&path, key)?
+    } else {
+        folder::unlock_folder_with_master_key(&path, key)?
+    };
+    drop(master_key);
+
+    // Update stored path: vault path → folder path
+    let mut folders = state.folders.lock().unwrap();
+    if let Some(pos) = folders.iter().position(|f| f == &path) {
+        folders[pos] = result.path.clone();
+    }
+    drop(folders);
+    state.save();
+
+    Ok(result)
 }

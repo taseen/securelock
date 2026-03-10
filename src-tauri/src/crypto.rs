@@ -7,7 +7,7 @@ use rand::RngCore;
 use zeroize::Zeroize;
 
 const SALT_LEN: usize = 32;
-const NONCE_LEN: usize = 12;
+pub const NONCE_LEN: usize = 12;
 const KEY_LEN: usize = 32;
 
 pub fn generate_salt() -> [u8; SALT_LEN] {
@@ -77,4 +77,38 @@ pub fn unwrap_key(master_key: &[u8; KEY_LEN], wrapped: &[u8]) -> Result<[u8; KEY
 
 pub fn zeroize_key(key: &mut [u8; KEY_LEN]) {
     key.zeroize();
+}
+
+pub fn generate_nonce() -> [u8; NONCE_LEN] {
+    let mut nonce = [0u8; NONCE_LEN];
+    rand::rngs::OsRng.fill_bytes(&mut nonce);
+    nonce
+}
+
+/// Encrypt with an externally supplied nonce. Returns ciphertext only (no nonce prepended).
+pub fn encrypt_with_nonce(
+    key: &[u8; KEY_LEN],
+    nonce_bytes: &[u8; NONCE_LEN],
+    plaintext: &[u8],
+) -> Result<Vec<u8>, String> {
+    let cipher = Aes256Gcm::new_from_slice(key)
+        .map_err(|e| format!("Cipher init error: {}", e))?;
+    let nonce = Nonce::from_slice(nonce_bytes);
+    cipher
+        .encrypt(nonce, plaintext)
+        .map_err(|e| format!("Encryption error: {}", e))
+}
+
+/// Decrypt using a separately supplied nonce.
+pub fn decrypt_with_nonce(
+    key: &[u8; KEY_LEN],
+    nonce_bytes: &[u8; NONCE_LEN],
+    ciphertext: &[u8],
+) -> Result<Vec<u8>, String> {
+    let cipher = Aes256Gcm::new_from_slice(key)
+        .map_err(|e| format!("Cipher init error: {}", e))?;
+    let nonce = Nonce::from_slice(nonce_bytes);
+    cipher
+        .decrypt(nonce, ciphertext)
+        .map_err(|_| "Decryption failed — wrong password or corrupted data".into())
 }
