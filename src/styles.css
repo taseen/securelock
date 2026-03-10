@@ -3,7 +3,7 @@
   padding: 0;
   box-sizing: border-box;
 }
- 
+
 :root {
   --bg: #0f1117;
   --surface: #1a1d27;
@@ -19,7 +19,7 @@
   --warning: #f59e0b;
   --radius: 10px;
 }
- 
+
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   background: var(--bg);
@@ -28,7 +28,7 @@ body {
   user-select: none;
   -webkit-user-select: none;
 }
- 
+
 /* Header */
 .header {
   display: flex;
@@ -38,24 +38,24 @@ body {
   border-bottom: 1px solid var(--border);
   -webkit-app-region: drag;
 }
- 
+
 .header button {
   -webkit-app-region: no-drag;
 }
- 
+
 .logo {
   display: flex;
   align-items: center;
   gap: 10px;
   color: var(--primary);
 }
- 
+
 .logo h1 {
   font-size: 20px;
   font-weight: 700;
   color: var(--text);
 }
- 
+
 /* Buttons */
 .btn {
   display: inline-flex;
@@ -69,37 +69,37 @@ body {
   cursor: pointer;
   transition: all 0.15s ease;
 }
- 
+
 .btn-primary {
   background: var(--primary);
   color: white;
 }
- 
+
 .btn-primary:hover {
   background: var(--primary-hover);
 }
- 
+
 .btn-secondary {
   background: var(--surface);
   color: var(--text);
   border: 1px solid var(--border);
 }
- 
+
 .btn-secondary:hover {
   background: var(--surface-hover);
 }
- 
+
 .btn-danger {
   background: transparent;
   color: var(--danger);
   border: 1px solid var(--danger);
 }
- 
+
 .btn-danger:hover {
   background: var(--danger);
   color: white;
 }
- 
+
 .btn-icon {
   background: none;
   border: none;
@@ -109,16 +109,16 @@ body {
   display: flex;
   align-items: center;
 }
- 
+
 .btn-icon:hover {
   color: var(--text);
 }
- 
+
 .btn-sm {
   padding: 6px 12px;
   font-size: 13px;
 }
- 
+
 /* Empty state */
 .empty-state {
   display: flex;
@@ -128,18 +128,18 @@ body {
   padding: 80px 24px;
   color: var(--text-dim);
 }
- 
+
 .empty-state p {
   margin-top: 12px;
   font-size: 16px;
 }
- 
+
 .empty-state .hint {
   font-size: 13px;
   margin-top: 4px;
   opacity: 0.6;
 }
- 
+
 /* Folder list */
 .folder-list {
   padding: 16px;
@@ -147,7 +147,7 @@ body {
   flex-direction: column;
   gap: 8px;
 }
- 
+
 .folder-card {
   display: flex;
   align-items: center;
@@ -158,11 +158,11 @@ body {
   border-radius: var(--radius);
   transition: all 0.15s ease;
 }
- 
+
 .folder-card:hover {
   background: var(--surface-hover);
 }
- 
+
 .folder-icon {
   width: 42px;
   height: 42px;
@@ -172,22 +172,22 @@ body {
   justify-content: center;
   flex-shrink: 0;
 }
- 
+
 .folder-icon.locked {
   background: rgba(239, 68, 68, 0.12);
   color: var(--danger);
 }
- 
+
 .folder-icon.unlocked {
   background: rgba(34, 197, 94, 0.12);
   color: var(--success);
 }
- 
+
 .folder-info {
   flex: 1;
   min-width: 0;
 }
- 
+
 .folder-path {
   font-size: 14px;
   font-weight: 500;
@@ -195,7 +195,7 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
 }
- 
+
 .folder-meta {
   font-size: 12px;
   color: var(--text-dim);
@@ -204,7 +204,7 @@ body {
   align-items: center;
   gap: 8px;
 }
- 
+
 .status-badge {
   display: inline-flex;
   align-items: center;
@@ -216,23 +216,23 @@ body {
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
- 
+
 .status-badge.locked {
   background: rgba(239, 68, 68, 0.12);
   color: var(--danger);
 }
- 
+
 .status-badge.unlocked {
   background: rgba(34, 197, 94, 0.12);
   color: var(--success);
 }
- 
+
 .folder-actions {
   display: flex;
   gap: 6px;
   flex-shrink: 0;
 }
- 
+
 /* Modal */
 .modal-overlay {
   position: fixed;
@@ -244,11 +244,11 @@ body {
   justify-content: center;
   z-index: 100;
 }
- 
+
 .modal-overlay.hidden {
   display: none;
 }
- 
+
 .modal {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -257,24 +257,24 @@ body {
   width: 400px;
   max-width: 90vw;
 }
- 
+
 .modal h2 {
   font-size: 18px;
   margin-bottom: 6px;
 }
- 
+
 .modal-desc {
   font-size: 13px;
   color: var(--text-dim);
   margin-bottom: 18px;
 }
- 
+
 .password-input-wrap {
   position: relative;
   display: flex;
   align-items: center;
 }
- 
+
 .password-input-wrap input {
   width: 100%;
   padding: 10px 40px 10px 14px;
@@ -286,16 +286,16 @@ body {
   outline: none;
   transition: border-color 0.15s;
 }
- 
+
 .password-input-wrap input:focus {
   border-color: var(--primary);
 }
- 
+
 .password-input-wrap .btn-icon {
   position: absolute;
   right: 8px;
 }
- 
+
 #modal-confirm {
   width: 100%;
   padding: 10px 14px;
@@ -308,15 +308,15 @@ body {
   outline: none;
   transition: border-color 0.15s;
 }
- 
+
 #modal-confirm:focus {
   border-color: var(--primary);
 }
- 
+
 #modal-confirm.hidden {
   display: none;
 }
- 
+
 /* Strength bar */
 .strength-wrap {
   margin-top: 10px;
@@ -324,11 +324,11 @@ body {
   align-items: center;
   gap: 10px;
 }
- 
+
 .strength-wrap.hidden {
   display: none;
 }
- 
+
 .strength-bar {
   flex: 1;
   height: 4px;
@@ -336,21 +336,21 @@ body {
   border-radius: 2px;
   overflow: hidden;
 }
- 
+
 .strength-fill {
   height: 100%;
   width: 0%;
   border-radius: 2px;
   transition: width 0.2s, background 0.2s;
 }
- 
+
 .strength-label {
   font-size: 11px;
   font-weight: 600;
   min-width: 50px;
   text-align: right;
 }
- 
+
 /* Modal error */
 .modal-error {
   margin-top: 10px;
@@ -361,33 +361,35 @@ body {
   color: var(--danger);
   font-size: 13px;
 }
- 
+
 .modal-error.hidden {
   display: none;
 }
- 
+
 .modal-actions {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
   margin-top: 20px;
 }
- 
+
 /* Loading spinner */
 .spinner {
   display: inline-block;
   width: 16px;
   height: 16px;
-  border: 2px solid rgba(255,255,255,0.2);
+  border: 2px solid rgba(255, 255, 255, 0.2);
   border-top-color: white;
   border-radius: 50%;
   animation: spin 0.6s linear infinite;
 }
- 
+
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
- 
+
 /* Header actions */
 .header-actions {
   display: flex;
@@ -504,13 +506,85 @@ body {
   letter-spacing: 0.03em;
 }
 
+/* Hide rules for new modal elements (matches existing per-element pattern) */
+#modal-hint.hidden {
+  display: none;
+}
+
+#master-option-wrap.hidden {
+  display: none;
+}
+
+#vault-hint-display.hidden {
+  display: none;
+}
+
+/* Vault hint display (above password field in unlock modal) */
+.vault-hint {
+  font-size: 13px;
+  color: var(--text-dim);
+  background: var(--surface-hover);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 12px;
+  margin-top: 12px;
+  margin-bottom: 12px;
+  font-style: italic;
+}
+
+/* Hint text input (lock modal) */
+#modal-hint {
+  width: 100%;
+  padding: 10px 14px;
+  background: var(--surface-hover);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: 14px;
+  margin-top: 8px;
+}
+
+#modal-hint:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+#modal-hint::placeholder {
+  color: var(--text-dim);
+}
+
+/* Master password checkbox row (lock modal) */
+.master-option {
+  margin-top: 10px;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-dim);
+  cursor: pointer;
+  user-select: none;
+}
+
+.checkbox-label input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+  accent-color: var(--primary);
+  flex-shrink: 0;
+}
+
 /* Scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
 }
+
 ::-webkit-scrollbar-track {
   background: transparent;
 }
+
 ::-webkit-scrollbar-thumb {
   background: var(--border);
   border-radius: 3px;

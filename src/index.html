@@ -66,11 +66,19 @@
             </svg>
           </button>
         </div>
+        <div id="vault-hint-display" class="vault-hint hidden"></div>
         <div id="strength-wrap" class="strength-wrap hidden">
           <div class="strength-bar"><div id="strength-fill" class="strength-fill"></div></div>
           <span id="strength-label" class="strength-label"></span>
         </div>
         <input type="password" id="modal-confirm" class="hidden" placeholder="Confirm password" autocomplete="off" />
+        <input type="text" id="modal-hint" class="hidden" placeholder="Password hint (optional, stored unencrypted)" autocomplete="off" maxlength="120" />
+        <div id="master-option-wrap" class="master-option hidden">
+          <label class="checkbox-label">
+            <input type="checkbox" id="modal-use-master" />
+            <span>Protect with master password (enables recovery)</span>
+          </label>
+        </div>
         <div id="modal-error" class="modal-error hidden"></div>
         <div id="forgot-password" class="forgot-link hidden">
           <a href="#" id="btn-forgot">Forgot password?</a>

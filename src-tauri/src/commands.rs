@@ -73,11 +73,13 @@ pub fn get_folders(state: State<'_, AppState>) -> Vec<ProtectedFolder> {
             } else {
                 false
             };
+            let hint = folder::get_hint_for_folder(path);
             ProtectedFolder {
                 path: path.clone(),
                 is_locked,
                 file_count,
                 has_recovery,
+                hint,
             }
         })
         .collect()
@@ -108,12 +110,14 @@ pub fn add_folder(path: String, state: State<'_, AppState>) -> Result<ProtectedF
     } else {
         false
     };
+    let hint = folder::get_hint_for_folder(&path);
 
     Ok(ProtectedFolder {
         path,
         is_locked,
         file_count,
         has_recovery,
+        hint,
     })
 }
 
@@ -130,11 +134,17 @@ pub fn remove_folder(path: String, state: State<'_, AppState>) -> Result<(), Str
 pub fn lock_folder(
     path: String,
     password: String,
+    hint: Option<String>,
+    use_master: bool,
     state: State<'_, AppState>,
 ) -> Result<ProtectedFolder, String> {
-    let master_key = state.master_key.lock().unwrap();
-    let result = folder::lock_folder(&path, &password, master_key.as_ref())?;
-    drop(master_key);
+    let master_key_opt = if use_master {
+        state.master_key.lock().unwrap().clone()
+    } else {
+        None
+    };
+
+    let result = folder::lock_folder(&path, &password, hint, master_key_opt.as_ref())?;
 
     // Update stored path: folder path → vault path
     let mut folders = state.folders.lock().unwrap();
@@ -173,9 +183,15 @@ pub fn unlock_folder(
 #[tauri::command]
 pub fn lock_all(
     password: String,
+    hint: Option<String>,
+    use_master: bool,
     state: State<'_, AppState>,
 ) -> Result<Vec<ProtectedFolder>, String> {
-    let master_key = state.master_key.lock().unwrap().clone();
+    let master_key_opt = if use_master {
+        state.master_key.lock().unwrap().clone()
+    } else {
+        None
+    };
     let folders_snapshot = state.folders.lock().unwrap().clone();
 
     let mut results = Vec::new();
@@ -183,7 +199,7 @@ pub fn lock_all(
 
     for path in &folders_snapshot {
         if !folder::is_locked(path) {
-            match folder::lock_folder(path, &password, master_key.as_ref()) {
+            match folder::lock_folder(path, &password, hint.clone(), master_key_opt.as_ref()) {
                 Ok(pf) => {
                     path_updates.push((path.clone(), pf.path.clone()));
                     results.push(pf);
@@ -204,6 +220,11 @@ pub fn lock_all(
     state.save();
 
     Ok(results)
+}
+
+#[tauri::command]
+pub fn get_vault_hint(path: String) -> Option<String> {
+    folder::get_vault_hint(&path)
 }
 
 #[tauri::command]
