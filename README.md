@@ -11,6 +11,7 @@ A lightweight desktop app for encrypting and locking folders with AES-256-GCM en
 - **System tray** — Minimizes to tray. Lock all folders at once from the tray menu.
 - **Password strength meter** — Visual feedback when choosing passwords.
 - **Single instance** — Only one instance of the app can run at a time. Launching again focuses the existing window.
+- **One-click re-lock** — After unlocking a vault, re-lock it with the same password in one click. No need to re-enter the password. Credentials are cached in memory for the session only and zeroized on use.
 - **Legacy support** — Folders locked with v1.x (`.securelock` format) are still unlockable.
 
 ## How It Works

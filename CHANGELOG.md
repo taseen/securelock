@@ -4,6 +4,23 @@ All notable changes to SecureLock are documented here.
 
 ---
 
+## [2.1.1] - 2026-03-11
+
+### Added
+- **One-click re-lock** — After unlocking a vault, a "Re-lock" button appears that re-encrypts with the same password, hint, and master recovery settings. No need to re-enter the password.
+- **Loading states on action buttons** — Lock, unlock, re-lock, and recover actions now show an inline spinner and disable the button while in progress, preventing duplicate submissions.
+- `relock_folder` Tauri command — looks up cached credentials and re-locks the folder with a fresh salt.
+- `get_vault_lock_metadata` helper — reads hint and recovery status from the vault header before unlock so credentials can be cached for re-lock.
+
+### Changed
+- `ProtectedFolder` struct includes `has_relock` field indicating whether cached credentials are available for one-click re-lock.
+- Unlocked folder cards now show "Re-lock" (green accent) and "New Password" buttons when cached credentials exist.
+
+### Security
+- Cached re-lock credentials use `Zeroizing<String>` and are held in RAM only — never persisted to disk. Cache entries are cleared on re-lock, manual lock, remove, or app exit.
+
+---
+
 ## [2.1.0] - 2026-03-10
 
 ### Security
