@@ -33,6 +33,7 @@ const btnForgot = document.getElementById("btn-forgot");
 let currentAction = null; // { type: 'lock'|'unlock'|'lock_all'|'setup_master'|'verify_master'|'recover', path?: string }
 let masterPasswordConfigured = false;
 let masterSessionUnlocked = false;
+let busyPath = null; // path currently being processed (disables buttons)
 
 // ── Load folders on startup ──
 async function loadFolders() {
@@ -70,6 +71,34 @@ function updateSettingsIcon() {
   } else {
     btnSettings.classList.remove("active");
     btnSettings.title = "Set up master password";
+  }
+}
+
+// ── Inline action helper (spinner + disable) ──
+function setCardBusy(btn, label) {
+  busyPath = btn.closest(".folder-card")?.dataset.path || true;
+  btn.disabled = true;
+  btn.dataset.origLabel = btn.textContent;
+  btn.innerHTML = '<span class="spinner"></span> ' + label;
+  const card = btn.closest(".folder-card");
+  if (card) {
+    card.querySelectorAll(".folder-actions .btn").forEach((b) => {
+      if (b !== btn) b.disabled = true;
+    });
+  }
+}
+
+function clearCardBusy(btn) {
+  busyPath = null;
+  if (btn) {
+    btn.disabled = false;
+    btn.textContent = btn.dataset.origLabel || "Done";
+    const card = btn.closest(".folder-card");
+    if (card) {
+      card.querySelectorAll(".folder-actions .btn").forEach((b) => {
+        b.disabled = false;
+      });
+    }
   }
 }
 
@@ -118,12 +147,21 @@ function renderFolders(folders) {
         ? `<span class="legacy-badge" title="Legacy format — will convert on next lock/unlock">Legacy</span>`
         : "";
 
-      const actionBtn = f.is_locked
-        ? `<button class="btn btn-sm btn-primary" onclick="promptUnlock('${escPath(f.path)}')">Unlock</button>`
-        : `<button class="btn btn-sm btn-secondary" onclick="promptLock('${escPath(f.path)}')">Lock</button>`;
+      let actionBtns;
+      if (f.is_locked) {
+        actionBtns = `<button class="btn btn-sm btn-primary" onclick="promptUnlock('${escPath(f.path)}')">Unlock</button>`;
+      } else {
+        if (f.has_relock) {
+          actionBtns = `
+            <button class="btn btn-sm btn-accent" onclick="relockFolder(this, '${escPath(f.path)}')">Re-lock</button>
+            <button class="btn btn-sm btn-secondary" onclick="promptLock('${escPath(f.path)}')">New Password</button>`;
+        } else {
+          actionBtns = `<button class="btn btn-sm btn-secondary" onclick="promptLock('${escPath(f.path)}')">Lock</button>`;
+        }
+      }
 
       return `
-        <div class="folder-card">
+        <div class="folder-card" data-path="${escHtml(f.path)}">
           <div class="folder-icon ${f.is_locked ? "locked" : "unlocked"}">${lockIcon}</div>
           <div class="folder-info">
             <div class="folder-path" title="${escHtml(f.path)}">${escHtml(name)}</div>
@@ -135,7 +173,7 @@ function renderFolders(folders) {
             </div>
           </div>
           <div class="folder-actions">
-            ${actionBtn}
+            ${actionBtns}
             <button class="btn btn-sm btn-danger" onclick="removeFolder('${escPath(f.path)}')">Remove</button>
           </div>
         </div>`;
@@ -259,6 +297,19 @@ window.promptUnlock = async function (path) {
     }
   } catch (e) {
     // Ignore — UI degrades gracefully
+  }
+};
+
+window.relockFolder = async function (btn, path) {
+  if (busyPath) return;
+  setCardBusy(btn, "Locking...");
+  try {
+    await invoke("relock_folder", { path });
+    busyPath = null;
+    await loadFolders();
+  } catch (e) {
+    clearCardBusy(btn);
+    alert("Re-lock failed: " + e);
   }
 };
 

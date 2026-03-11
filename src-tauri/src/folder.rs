@@ -40,6 +40,8 @@ pub struct ProtectedFolder {
     pub has_recovery: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hint: Option<String>,
+    #[serde(default)]
+    pub has_relock: bool,
 }
 
 // ── Vault I/O helpers ────────────────────────────────────────────────────────
@@ -333,6 +335,7 @@ pub fn lock_folder(
         file_count,
         has_recovery,
         hint: returned_hint,
+        has_relock: false,
     })
 }
 
@@ -412,6 +415,7 @@ pub fn unlock_folder(vault_path: &str, password: &str) -> Result<ProtectedFolder
         file_count: meta.count,
         has_recovery: false,
         hint: None,
+        has_relock: false,
     })
 }
 
@@ -492,6 +496,7 @@ pub fn unlock_folder_with_master_key(
         file_count: meta.count,
         has_recovery: false,
         hint: None,
+        has_relock: false,
     })
 }
 
@@ -540,6 +545,17 @@ pub fn get_vault_hint(path: &str) -> Option<String> {
 pub fn get_hint_for_folder(path: &str) -> Option<String> {
     if is_locked(path) && path.ends_with(VAULT_EXT) {
         return get_vault_hint(path);
+    }
+    None
+}
+
+/// Reads vault header metadata before unlock deletes the file.
+/// Returns (hint, has_recovery).
+pub fn get_vault_lock_metadata(vault_path: &str) -> Option<(Option<String>, bool)> {
+    if vault_path.ends_with(VAULT_EXT) {
+        if let Ok(header) = read_vault_header_only(Path::new(vault_path)) {
+            return Some((header.hint, header.recovery_key.is_some()));
+        }
     }
     None
 }
@@ -657,6 +673,7 @@ mod legacy {
             file_count,
             has_recovery: false,
             hint: None,
+            has_relock: false,
         })
     }
 
@@ -683,6 +700,7 @@ mod legacy {
             file_count,
             has_recovery: false,
             hint: None,
+            has_relock: false,
         })
     }
 

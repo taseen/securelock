@@ -1,10 +1,18 @@
 use crate::crypto;
 use crate::folder::{self, ProtectedFolder};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 use std::sync::Mutex;
 use tauri::State;
+use zeroize::Zeroizing;
+
+pub(crate) struct CachedCredentials {
+    password: Zeroizing<String>,
+    hint: Option<String>,
+    use_master: bool,
+}
 
 pub struct AppState {
     pub folders: Mutex<Vec<String>>,
@@ -12,6 +20,7 @@ pub struct AppState {
     pub master_verify_token: Mutex<Option<Vec<u8>>>,
     pub master_key: Mutex<Option<[u8; 32]>>,
     pub config_path: String,
+    pub relock_cache: Mutex<HashMap<String, CachedCredentials>>,
 }
 
 #[derive(Serialize, Deserialize, Default)]
@@ -42,6 +51,7 @@ impl AppState {
             master_verify_token: Mutex::new(master_verify_token),
             master_key: Mutex::new(None),
             config_path,
+            relock_cache: Mutex::new(HashMap::new()),
         }
     }
 
@@ -63,6 +73,7 @@ impl AppState {
 #[tauri::command]
 pub fn get_folders(state: State<'_, AppState>) -> Vec<ProtectedFolder> {
     let folders = state.folders.lock().unwrap();
+    let relock_cache = state.relock_cache.lock().unwrap();
     folders
         .iter()
         .map(|path| {
@@ -74,12 +85,14 @@ pub fn get_folders(state: State<'_, AppState>) -> Vec<ProtectedFolder> {
                 false
             };
             let hint = folder::get_hint_for_folder(path);
+            let has_relock = !is_locked && relock_cache.contains_key(path);
             ProtectedFolder {
                 path: path.clone(),
                 is_locked,
                 file_count,
                 has_recovery,
                 hint,
+                has_relock,
             }
         })
         .collect()
@@ -118,6 +131,7 @@ pub fn add_folder(path: String, state: State<'_, AppState>) -> Result<ProtectedF
         file_count,
         has_recovery,
         hint,
+        has_relock: false,
     })
 }
 
@@ -126,6 +140,7 @@ pub fn remove_folder(path: String, state: State<'_, AppState>) -> Result<(), Str
     let mut folders = state.folders.lock().unwrap();
     folders.retain(|f| f != &path);
     drop(folders);
+    state.relock_cache.lock().unwrap().remove(&path);
     state.save();
     Ok(())
 }
@@ -146,6 +161,9 @@ pub fn lock_folder(
 
     let result = folder::lock_folder(&path, &password, hint, master_key_opt.as_ref())?;
 
+    // Clear relock cache for this folder
+    state.relock_cache.lock().unwrap().remove(&path);
+
     // Update stored path: folder path → vault path
     let mut folders = state.folders.lock().unwrap();
     if let Some(pos) = folders.iter().position(|f| f == &path) {
@@ -163,11 +181,28 @@ pub fn unlock_folder(
     password: String,
     state: State<'_, AppState>,
 ) -> Result<ProtectedFolder, String> {
+    // Read vault metadata before unlock deletes the file
+    let vault_meta = folder::get_vault_lock_metadata(&path);
+
     let result = if folder::is_legacy_locked(&path) {
         folder::unlock_folder_legacy(&path, &password)?
     } else {
         folder::unlock_folder(&path, &password)?
     };
+
+    // Cache credentials for re-lock
+    let (hint, use_master) = match vault_meta {
+        Some((hint, has_recovery)) => (hint, has_recovery),
+        None => (None, false),
+    };
+    state.relock_cache.lock().unwrap().insert(
+        result.path.clone(),
+        CachedCredentials {
+            password: Zeroizing::new(password),
+            hint,
+            use_master,
+        },
+    );
 
     // Update stored path: vault path → folder path
     let mut folders = state.folders.lock().unwrap();
@@ -208,6 +243,13 @@ pub fn lock_all(
             }
         }
     }
+
+    // Clear relock cache for all locked folders
+    let mut relock_cache = state.relock_cache.lock().unwrap();
+    for (old, _) in &path_updates {
+        relock_cache.remove(old);
+    }
+    drop(relock_cache);
 
     // Apply all path updates at once
     let mut folders = state.folders.lock().unwrap();
@@ -298,6 +340,39 @@ pub fn recover_folder(
     drop(master_key);
 
     // Update stored path: vault path → folder path
+    let mut folders = state.folders.lock().unwrap();
+    if let Some(pos) = folders.iter().position(|f| f == &path) {
+        folders[pos] = result.path.clone();
+    }
+    drop(folders);
+    state.save();
+
+    Ok(result)
+}
+
+#[tauri::command]
+pub fn relock_folder(path: String, state: State<'_, AppState>) -> Result<ProtectedFolder, String> {
+    let cached = state
+        .relock_cache
+        .lock()
+        .unwrap()
+        .remove(&path)
+        .ok_or("No cached credentials for re-lock")?;
+
+    let master_key_opt = if cached.use_master {
+        state.master_key.lock().unwrap().clone()
+    } else {
+        None
+    };
+
+    let result = folder::lock_folder(
+        &path,
+        &cached.password,
+        cached.hint,
+        master_key_opt.as_ref(),
+    )?;
+
+    // Update stored path
     let mut folders = state.folders.lock().unwrap();
     if let Some(pos) = folders.iter().position(|f| f == &path) {
         folders[pos] = result.path.clone();

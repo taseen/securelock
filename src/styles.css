@@ -119,6 +119,29 @@ body {
   font-size: 13px;
 }
 
+.btn-sm .spinner {
+  width: 12px;
+  height: 12px;
+  border-width: 1.5px;
+  vertical-align: middle;
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-accent {
+  background: var(--success);
+  color: #000;
+  font-weight: 600;
+}
+
+.btn-accent:hover {
+  background: #4ade80;
+}
+
+
 /* Empty state */
 .empty-state {
   display: flex;
